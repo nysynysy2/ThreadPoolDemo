@@ -42,7 +42,7 @@ public:
 	}
 };
 ThreadPool::ThreadPool(size_t thread_count) {
-	for (size_t i = 0; i < (thread_count > std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : thread_count); ++i)
+	for (size_t i = 0; i < thread_count; ++i)
 		thread_pool.push_back(std::thread(&ThreadPool::_execThread, this));
 }
 void ThreadPool::_execThread()
