@@ -63,10 +63,10 @@ void ThreadPool::_execThread()
 template<class Fn, class... Args>
 std::shared_future<typename std::invoke_result<Fn, Args...>::type> ThreadPool::addTask(Fn&& func, Args&&... args)
 {
-	std::lock_guard<std::mutex> locker(m_lock);
 	auto m_future = std::async(std::launch::deferred, std::forward<Fn>(func), std::forward<Args>(args)...);
 	auto s_f = m_future.share();
 	std::packaged_task<void()> task([s_f]() mutable {s_f.wait(); });
+	std::lock_guard<std::mutex> locker(m_lock);
 	cache.push_back(std::move(task));
 	cv.notify_one();
 	return s_f;
