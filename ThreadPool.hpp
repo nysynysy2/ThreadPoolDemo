@@ -17,9 +17,9 @@ public:
 	std::atomic<size_t> workingThreadCount = 0;
 	std::vector<std::thread> thread_pool;
 	std::list<std::packaged_task<void()>> cache;
-	std::mutex m_lock;
-	std::condition_variable cv;
-	std::condition_variable cv2;
+	std::mutex cacheLock;
+	std::condition_variable execThreads_cv;
+	std::condition_variable wait_cv;
 	explicit ThreadPool(size_t thread_count = std::thread::hardware_concurrency());
 	explicit ThreadPool(const ThreadPool&) = delete;
 	explicit ThreadPool(ThreadPool&&) = delete;
@@ -49,15 +49,15 @@ void ThreadPool::_execThread()
 {
 	while (!(isExit.load()))
 	{
-		std::unique_lock<std::mutex> locker(m_lock);
-		cv.wait(locker, [=] {return !(this->cache.empty()); });
+		std::unique_lock<std::mutex> locker(cacheLock);
+		execThreads_cv.wait(locker, [=] {return !(this->cache.empty()); });
 		std::packaged_task<void()> task = std::move(this->cache.front());
 		this->cache.pop_front();
 		locker.unlock();
 		++workingThreadCount;
 		task();
 		--workingThreadCount;
-		cv2.notify_all();
+		wait_cv.notify_all();
 	}
 }
 template<class Fn, class... Args>
@@ -66,9 +66,9 @@ std::shared_future<typename std::invoke_result<Fn, Args...>::type> ThreadPool::a
 	auto m_future = std::async(std::launch::deferred, std::forward<Fn>(func), std::forward<Args>(args)...);
 	auto s_f = m_future.share();
 	std::packaged_task<void()> task([s_f]() mutable {s_f.wait(); });
-	std::lock_guard<std::mutex> locker(m_lock);
+	std::lock_guard<std::mutex> locker(cacheLock);
 	cache.push_back(std::move(task));
-	cv.notify_one();
+	execThreads_cv.notify_one();
 	return s_f;
 }
 template<class Fn, class... Args, class Dura>
@@ -93,7 +93,7 @@ void ThreadPool::close()
 void ThreadPool::wait()
 {
 	if (this->isExit || this->isTerminate)return;
-	std::unique_lock<std::mutex> locker(m_lock);
-	cv2.wait(locker, [=]() {return (this->cache.empty()) && (this->workingThreadCount.load() == 0); });
+	std::unique_lock<std::mutex> locker(cacheLock);
+	wait_cv.wait(locker, [=]() {return (this->cache.empty()) && (this->workingThreadCount.load() == 0); });
 }
 #endif
