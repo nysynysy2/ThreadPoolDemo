@@ -14,7 +14,7 @@ class ThreadPool
 public:
 	std::atomic<bool> isExit = false;
 	std::atomic<bool> isTerminate = false;
-	std::atomic<int> wokingThreadCount = 0;
+	std::atomic<size_t> workingThreadCount = 0;
 	std::vector<std::thread> thread_pool;
 	std::list<std::packaged_task<void()>> cache;
 	std::mutex m_lock;
@@ -54,9 +54,9 @@ void ThreadPool::_execThread()
 		std::packaged_task<void()> task = std::move(this->cache.front());
 		this->cache.pop_front();
 		locker.unlock();
-		++wokingThreadCount;
+		++workingThreadCount;
 		task();
-		--wokingThreadCount;
+		--workingThreadCount;
 		cv2.notify_all();
 	}
 }
@@ -94,6 +94,6 @@ void ThreadPool::wait()
 {
 	if (this->isExit || this->isTerminate)return;
 	std::unique_lock<std::mutex> locker(m_lock);
-	cv2.wait(locker, [=]() {return (this->cache.empty()) && (this->wokingThreadCount.load() == 0); });
+	cv2.wait(locker, [=]() {return (this->cache.empty()) && (this->workingThreadCount.load() == 0); });
 }
 #endif
