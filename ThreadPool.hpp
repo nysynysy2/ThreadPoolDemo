@@ -18,8 +18,8 @@ public:
 	std::vector<std::thread> thread_pool;
 	std::list<std::packaged_task<void()>> cache;
 	std::mutex cacheLock;
-	std::condition_variable execThreads_cv;
-	std::condition_variable wait_cv;
+	std::condition_variable task_cv;
+	std::condition_variable finish_cv;
 	explicit ThreadPool(size_t thread_count = std::thread::hardware_concurrency());
 	explicit ThreadPool(const ThreadPool&) = delete;
 	explicit ThreadPool(ThreadPool&&) = delete;
@@ -50,14 +50,14 @@ void ThreadPool::_execThread()
 	while (!(isExit.load()))
 	{
 		std::unique_lock<std::mutex> locker(cacheLock);
-		execThreads_cv.wait(locker, [=] {return !(this->cache.empty()); });
+		task_cv.wait(locker, [=] {return !(this->cache.empty()); });
 		std::packaged_task<void()> task = std::move(this->cache.front());
 		this->cache.pop_front();
 		locker.unlock();
 		++workingThreadCount;
 		task();
 		--workingThreadCount;
-		wait_cv.notify_all();
+		finish_cv.notify_all();
 	}
 }
 template<class Fn, class... Args>
@@ -68,7 +68,7 @@ std::shared_future<typename std::invoke_result<Fn, Args...>::type> ThreadPool::a
 	std::packaged_task<void()> task([s_f]() mutable {s_f.wait(); });
 	std::lock_guard<std::mutex> locker(cacheLock);
 	cache.push_back(std::move(task));
-	execThreads_cv.notify_one();
+	task_cv.notify_one();
 	return s_f;
 }
 template<class Fn, class... Args, class Dura>
@@ -94,6 +94,6 @@ void ThreadPool::wait()
 {
 	if (this->isExit || this->isTerminate)return;
 	std::unique_lock<std::mutex> locker(cacheLock);
-	wait_cv.wait(locker, [=]() {return (this->cache.empty()) && (this->workingThreadCount.load() == 0); });
+	finish_cv.wait(locker, [=]() {return (this->cache.empty()) && (this->workingThreadCount.load() == 0); });
 }
 #endif
